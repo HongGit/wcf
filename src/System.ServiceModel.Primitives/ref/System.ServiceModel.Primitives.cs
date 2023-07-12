@@ -1273,6 +1273,8 @@ namespace System.ServiceModel.Channels
         public static System.ServiceModel.Channels.Message CreateMessage(System.ServiceModel.Channels.MessageVersion version, string action, System.Xml.XmlReader body) { return default; }
         public static System.ServiceModel.Channels.Message CreateMessage(System.Xml.XmlDictionaryReader envelopeReader, int maxSizeOfHeaders, System.ServiceModel.Channels.MessageVersion version) { return default; }
         public static System.ServiceModel.Channels.Message CreateMessage(System.Xml.XmlReader envelopeReader, int maxSizeOfHeaders, System.ServiceModel.Channels.MessageVersion version) { return default; }
+        public static System.ServiceModel.Channels.Message CreateMessage(System.ServiceModel.Channels.MessageVersion version, System.ServiceModel.FaultCode faultCode, string reason, string action) { return default; }
+        public static System.ServiceModel.Channels.Message CreateMessage(System.ServiceModel.Channels.MessageVersion version, System.ServiceModel.FaultCode faultCode, string reason, object detail, string action) { return default; }
         public T GetBody<T>() { return default; }
         public T GetBody<T>(System.Runtime.Serialization.XmlObjectSerializer serializer) { return default; }
         public string GetBodyAttribute(string localName, string ns) { return default; }
@@ -1755,6 +1757,9 @@ namespace System.ServiceModel.Description
         public string Name { get { return default; } }
         public System.Collections.ObjectModel.KeyedCollection<System.Type, System.ServiceModel.Description.IOperationBehavior> OperationBehaviors { get { return default; } }
         public System.Reflection.MethodInfo TaskMethod { get { return default; } set { } }
+        public System.Reflection.MethodInfo BeginMethod { get { return default; } set { } }
+        public System.Reflection.MethodInfo EndMethod { get { return default; } set { } }
+        public System.Reflection.MethodInfo SyncMethod { get { return default; } set { } }
     }
     public partial class OperationDescriptionCollection : System.Collections.ObjectModel.Collection<System.ServiceModel.Description.OperationDescription>
     {

@@ -27,7 +27,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         public const string NetStandardLibraryPackageID = "NETStandard.Library";
 
         private static readonly IReadOnlyList<string> s_binaryExtensions = new List<string> { ".exe", ".dll" }.AsReadOnly();
-        private static readonly IReadOnlyList<string> s_projectExtensions = new List<string> { ".csproj" }.AsReadOnly();
+        private static readonly IReadOnlyList<string> s_projectExtensions = new List<string> { ".csproj", ".vbproj",".fsproj" }.AsReadOnly();
         private static readonly IReadOnlyList<string> s_exeExtensions = new List<string> { ".exe" }.AsReadOnly();
 
         /// <summary>
@@ -329,6 +329,10 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
         internal static bool IsValidVersion(string version)
         {
+            if (version == "*-*")
+            {
+                return true;
+            }
             // https://semver.org/spec/v2.0.0.html
 
             bool? isValid = null;

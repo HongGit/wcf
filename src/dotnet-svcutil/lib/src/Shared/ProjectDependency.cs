@@ -27,7 +27,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         public const string NetStandardLibraryPackageID = "NETStandard.Library";
 
         private static readonly IReadOnlyList<string> s_binaryExtensions = new List<string> { ".exe", ".dll" }.AsReadOnly();
-        private static readonly IReadOnlyList<string> s_projectExtensions = new List<string> { ".csproj", ".vbproj",".fsproj" }.AsReadOnly();
+        private static readonly IReadOnlyList<string> s_projectExtensions = new List<string> { ".csproj", ".vbproj", ".fsproj", ".vcxproj" }.AsReadOnly();
         private static readonly IReadOnlyList<string> s_exeExtensions = new List<string> { ".exe" }.AsReadOnly();
 
         /// <summary>
@@ -395,9 +395,16 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         public int CompareTo(ProjectDependency other)
         {
             if (other == null) return 1;
-            return this.DependencyType == other.DependencyType ?
-                StringComparer.CurrentCultureIgnoreCase.Compare(this.AssemblyName, other.AssemblyName) :
+            if (other.DependencyType == ProjectDependencyType.Binary)
+            {
+                return this.DependencyType == other.DependencyType ?
+                StringComparer.CurrentCultureIgnoreCase.Compare(this.FullPath, other.FullPath) :
                 this.DependencyType > other.DependencyType ? 1 : -1;
+            }
+
+            return this.DependencyType == other.DependencyType ?
+            StringComparer.CurrentCultureIgnoreCase.Compare(this.AssemblyName, other.AssemblyName) :
+            this.DependencyType > other.DependencyType ? 1 : -1;
         }
         #endregion
 

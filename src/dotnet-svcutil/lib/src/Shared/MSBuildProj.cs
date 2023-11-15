@@ -114,6 +114,41 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         }
         #endregion
 
+        private XElement _packageReferenceGroup;
+        private XElement PacakgeReferenceGroup
+        {
+            get
+            {
+                if (_packageReferenceGroup == null)
+                {
+                    IEnumerable<XElement> refItems = this.ProjectNode.Elements("PackageReference");
+                    if (refItems == null || refItems.Count() == 0)
+                    {
+                        // add ref subgroup
+                        _packageReferenceGroup = new XElement("ItemGroup");
+                        this.ProjectNode.Add(_packageReferenceGroup);
+                    }
+                    else
+                    {
+                        _packageReferenceGroup = refItems.FirstOrDefault().Parent;
+                    }
+
+                    FrameworkInfo netfxInfo = null;
+                    FrameworkInfo dnxInfo = null;
+                    if (this.TargetFrameworks.Count() > 1 && this.TargetFrameworks.Any(t => TargetFrameworkHelper.IsSupportedFramework(t, out netfxInfo) && !netfxInfo.IsDnx))
+                    {
+                        var tfx = this.TargetFrameworks.FirstOrDefault(t => TargetFrameworkHelper.IsSupportedFramework(t, out dnxInfo) && dnxInfo.IsDnx);
+                        if (!string.IsNullOrEmpty(tfx) && dnxInfo.Version.Major >= 6)
+                        {
+                            _packageReferenceGroup.Add(new XAttribute("Condition", $"'$(TargetFramework)' != '{netfxInfo.FullName}'"));
+                        }
+                    }
+                }
+
+                return _packageReferenceGroup;
+            }
+        }
+
         #region Parsing/Settings Methods
         public static async Task<MSBuildProj> FromPathAsync(string filePath, ILogger logger, CancellationToken cancellationToken)
         {
@@ -122,14 +157,14 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
             return project;
         }
 
-        internal static async Task<MSBuildProj> FromPathAsync(string filePath, ILogger logger, string tfMonitor, CancellationToken cancellationToken)
+        internal static async Task<MSBuildProj> FromPathAsync(string filePath, ILogger logger, string tfMoniker, CancellationToken cancellationToken)
         {
-            var project = await ParseAsync(File.ReadAllText(filePath), filePath, logger, cancellationToken, tfMonitor).ConfigureAwait(false);
+            var project = await ParseAsync(File.ReadAllText(filePath), filePath, logger, cancellationToken, tfMoniker).ConfigureAwait(false);
             project._isSaved = true;
             return project;
         }
 
-        public static async Task<MSBuildProj> ParseAsync(string projectText, string projectFullPath, ILogger logger, CancellationToken cancellationToken, string tfMonitor = "")
+        public static async Task<MSBuildProj> ParseAsync(string projectText, string projectFullPath, ILogger logger, CancellationToken cancellationToken, string tfMoniker = "")
         {
             using (var safeLogger = await SafeLogger.WriteStartOperationAsync(logger, $"Parsing project {Path.GetFileName(projectFullPath)}").ConfigureAwait(false))
             {
@@ -166,7 +201,10 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                     var targetFramework = targetFrameworkElements.Last().Value.Trim().ToLowerInvariant();
                     if (!string.IsNullOrWhiteSpace(targetFramework))
                     {
-                        msbuildProj._targetFrameworks.Add(targetFramework);
+                        if(TargetFrameworkHelper.IsSupportedFramework(targetFramework, out FrameworkInfo fxInfo))
+                        {
+                            msbuildProj._targetFrameworks.Add(targetFramework);
+                        }
                     }
                 }
 
@@ -187,13 +225,14 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                     }
                 }
 
+                msbuildProj._targetFrameworks.Sort();
                 msbuildProj._targetFramework = TargetFrameworkHelper.GetBestFitTargetFramework(msbuildProj._targetFrameworks);
 
                 if(string.IsNullOrEmpty(msbuildProj._targetFramework))
                 {
-                    if(!string.IsNullOrEmpty(tfMonitor))
+                    if(!string.IsNullOrEmpty(tfMoniker) && FrameworkInfo.TryParse(tfMoniker, out FrameworkInfo fxInfo))
                     {
-                        msbuildProj._targetFramework = tfMonitor;
+                        msbuildProj._targetFramework = fxInfo.FullName;
                     }
                     else
                     {
@@ -475,10 +514,24 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                         this.ProjectReferceGroup.Add(new XElement("ProjectReference", new XAttribute("Include", dependency.FullPath)));
                         break;
                     case ProjectDependencyType.Binary:
-                        this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
+                        FrameworkInfo netfxInfo = null;
+                        FrameworkInfo dnxInfo = null;
+                        string dnxStr = this.TargetFrameworks.FirstOrDefault(t => TargetFrameworkHelper.IsSupportedFramework(t, out dnxInfo) && dnxInfo.IsDnx);
+                        if (this.TargetFrameworks.Count() > 1 && dependency.Name.Equals(TargetFrameworkHelper.FullFrameworkReferences.FirstOrDefault().Name)
+                            && !string.IsNullOrWhiteSpace(dnxStr) && dnxInfo.Version.Major >= 6)
+                        {
+                            if (this.TargetFrameworks.Any(t => TargetFrameworkHelper.IsSupportedFramework(t, out netfxInfo) && !netfxInfo.IsDnx))
+                            {
+                                this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Condition", $"'$(TargetFramework)' == '{netfxInfo.FullName}'"), new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
+                            }
+                        }
+                        else
+                        {
+                            this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
+                        }
                         break;
                     case ProjectDependencyType.Package:
-                        this.ReferenceGroup.Add(new XElement("PackageReference", new XAttribute("Include", dependency.Name), new XAttribute("Version", dependency.Version)));
+                        this.PacakgeReferenceGroup.Add(new XElement("PackageReference", new XAttribute("Include", dependency.Name), new XAttribute("Version", dependency.Version)));
                         break;
                     case ProjectDependencyType.Tool:
                         this.ReferenceGroup.Add(new XElement("DotNetCliToolReference", new XAttribute("Include", dependency.Name), new XAttribute("Version", dependency.Version)));
@@ -494,7 +547,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                             break;
                         case ProjectDependencyType.Package:
                             string path = $"$(NuGetPackageRoot){dependency.Name}\\{dependency.Version}\\content\\internalAssets\\**";
-                            this.ReferenceGroup.Add(new XElement("Content", new XAttribute("CopyToOutputDirectory", "always"), new XAttribute("Include", path), new XAttribute("Link", "internalAssets/%(RecursiveDir)%(Filename)%(Extension)")));
+                            this.PacakgeReferenceGroup.Add(new XElement("Content", new XAttribute("CopyToOutputDirectory", "always"), new XAttribute("Include", path), new XAttribute("Link", "internalAssets/%(RecursiveDir)%(Filename)%(Extension)")));
                             break;
                     }
                 }

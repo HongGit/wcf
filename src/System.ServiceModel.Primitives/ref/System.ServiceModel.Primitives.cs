@@ -6,8 +6,8 @@
 
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 
 namespace System.Collections.Generic {
       public partial class SynchronizedCollection<T> : IList<T>, IList
@@ -259,6 +259,7 @@ namespace System.ServiceModel
     }
     public partial class ChannelFactory<TChannel> : System.ServiceModel.ChannelFactory, System.ServiceModel.Channels.IChannelFactory, System.ServiceModel.Channels.IChannelFactory<TChannel>, System.ServiceModel.ICommunicationObject
     {
+        public ChannelFactory(System.ServiceModel.Channels.Binding binding) { }
         public ChannelFactory(System.ServiceModel.Channels.Binding binding, System.ServiceModel.EndpointAddress remoteAddress) { }
         public ChannelFactory(System.ServiceModel.Description.ServiceEndpoint endpoint) { }
         [System.ComponentModel.EditorBrowsableAttribute(System.ComponentModel.EditorBrowsableState.Never)]
@@ -586,6 +587,12 @@ namespace System.ServiceModel
         public string Text { get { return default; } }
         public string XmlLang { get { return default; } }
         public bool Matches(System.Globalization.CultureInfo cultureInfo) { return default; }
+    }
+    public enum HostNameComparisonMode
+    {
+        StrongWildcard = 0, // +
+        Exact = 1,
+        WeakWildcard = 2,   // *
     }
     public partial interface IClientChannel : System.IDisposable, System.ServiceModel.Channels.IChannel, System.ServiceModel.ICommunicationObject, System.ServiceModel.IContextChannel, System.ServiceModel.IExtensibleObject<System.ServiceModel.IContextChannel>
     {
@@ -1485,7 +1492,9 @@ namespace System.ServiceModel.Channels
         public System.ServiceModel.EnvelopeVersion Envelope { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion None { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion Soap11 { get { return default; } }
+        public static System.ServiceModel.Channels.MessageVersion Soap11WSAddressing10 { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion Soap11WSAddressingAugust2004 { get { return default; } }
+        public static System.ServiceModel.Channels.MessageVersion Soap12 { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion Soap12WSAddressing10 { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion Soap12WSAddressingAugust2004 { get { return default; } }
         public static System.ServiceModel.Channels.MessageVersion CreateVersion(System.ServiceModel.EnvelopeVersion envelopeVersion) { return default; }
@@ -1909,6 +1918,7 @@ namespace System.ServiceModel.Dispatcher
         object BeforeCall(string operationName, object[] inputs);
     }
 }
+
 namespace System.ServiceModel.Security
 {
     public sealed partial class HttpDigestClientCredential
@@ -1986,5 +1996,18 @@ namespace System.ServiceModel.Security
         None = 0,
         PeerOrChainTrust = 3,
         PeerTrust = 1,
+    }
+    internal interface ISecurityCommunicationObject
+    {
+        TimeSpan DefaultOpenTimeout { get; }
+        TimeSpan DefaultCloseTimeout { get; }
+        void OnAbort();
+        Task OnCloseAsync(TimeSpan timeout);
+        void OnClosed();
+        void OnClosing();
+        void OnFaulted();
+        Task OnOpenAsync(TimeSpan timeout);
+        void OnOpened();
+        void OnOpening();
     }
 }

@@ -11,10 +11,7 @@ trigger:
     - release/6.*
 
 variables:
-- template: /eng/common/templates-official/variables/pool-providers.yml@self
 - name: _TeamName
-  value: WcfCore
-- name: TeamName
   value: WcfCore
 - name: _PublishUsingPipelines
   value: true
@@ -25,6 +22,7 @@ variables:
 - name: _RunAsInternal
   value: true
 - group: DotNet-Wcf-SDLValidation-Params
+
 resources:
   repositories:
   - repository: MicroBuildTemplate
@@ -35,22 +33,23 @@ extends:
   template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
   parameters:
     sdl:
-      sourceAnalysisPool:
-        name: $(DncEngInternalBuildPool)
-        image: 1es-windows-2022-pt
-        os: windows
+      sourceAnalysisPool: <AgentPoolPlaceHolder>
+    pool:
+      name: AzurePipelines-EO
+      image: AzurePipelinesWindows2022compliantGPT
+      os: windows
     customBuildTags:
     - ES365AIMigrationTooling
     stages:
     - stage: Build
       displayName: Build
       jobs:
-      - ${{ if and(ne(variables['System.TeamProject'], 'public'), notin(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main')) }}:
-        - template: /eng/common/templates-official/job/onelocbuild.yml@self
-          parameters:
-            MirrorRepo: wcf
-            LclSource: lclFilesfromPackage
-            LclPackageId: 'LCL-JUNO-PROD-WCF'
+      # - ${{ if and(ne(variables['System.TeamProject'], 'public'), notin(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main')) }}:
+      #   - template: /eng/common/templates/job/onelocbuild.yml@self
+      #     parameters:
+      #       MirrorRepo: wcf
+      #       LclSource: lclFilesfromPackage
+      #       LclPackageId: 'LCL-JUNO-PROD-WCF'
       - template: /eng/common/templates-official/jobs/jobs.yml@self
         parameters:
           enableMicrobuild: true
@@ -64,9 +63,8 @@ extends:
             timeoutInMinutes: 90
             pool:
               ${{ if eq(variables._RunAsInternal, True) }}:
-                name: $(DncEngInternalBuildPool)
-                image: 1es-windows-2022-pt
-                os: windows
+                name: NetCore1ESPool-Internal
+                demands: ImageOverride -equals windows.vs2022.amd64
             variables:
             - _InternalBuildArgs: ''
             - HelixApiAccessToken: ''
@@ -88,6 +86,10 @@ extends:
             steps:
             - checkout: self
               clean: true
+            - ${{ if eq(variables._RunAsPublic, True) }}:
+              - template: /eng/UpdatePRService.yml
+                parameters:
+                  wcfPRServiceId: $(_WcfPRServiceId)
             - script: eng\common\cibuild.cmd -configuration $(_BuildConfig) -preparemachine $(_InternalBuildArgs) $(_TestArgs) /p:Test=false
               displayName: Windows Build / Publish
             - powershell: eng\common\build.ps1 -configuration $(_BuildConfig) -preparemachine -ci -test -integrationTest -projects $(Build.SourcesDirectory)/eng/SendToHelix.proj $(_TestArgs) /p:TestJob=Windows /bl:$(Build.SourcesDirectory)/artifacts/log/$(_BuildConfig)/SendToHelix.binlog

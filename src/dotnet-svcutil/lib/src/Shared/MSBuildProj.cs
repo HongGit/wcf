@@ -17,6 +17,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 {
     internal class MSBuildProj : IDisposable
     {
+        private const string DirBuildProps = "Directory.Build.props";
         private bool _isSaved;
         private bool _ownsDirectory;
         private readonly ProjectPropertyResolver _propertyResolver;
@@ -42,7 +43,9 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         }
 
         private List<string> _targetFrameworks = new List<string>();
+        private List<string> _endOfLifeTargetFrameworks = new List<string>();
         public IEnumerable<string> TargetFrameworks { get { return _targetFrameworks; } }
+        internal IEnumerable<string> EndOfLifeTargetFrameworks { get { return _endOfLifeTargetFrameworks; } }
 
         private string _runtimeIdentifier;
         public string RuntimeIdentifier
@@ -132,17 +135,6 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                     {
                         _packageReferenceGroup = refItems.FirstOrDefault().Parent;
                     }
-
-                    FrameworkInfo netfxInfo = null;
-                    FrameworkInfo dnxInfo = null;
-                    if (this.TargetFrameworks.Count() > 1 && this.TargetFrameworks.Any(t => TargetFrameworkHelper.IsSupportedFramework(t, out netfxInfo) && !netfxInfo.IsDnx))
-                    {
-                        var tfx = this.TargetFrameworks.FirstOrDefault(t => TargetFrameworkHelper.IsSupportedFramework(t, out dnxInfo) && dnxInfo.IsDnx);
-                        if (!string.IsNullOrEmpty(tfx) && dnxInfo.Version.Major >= 6)
-                        {
-                            _packageReferenceGroup.Add(new XAttribute("Condition", $"'$(TargetFramework)' != '{netfxInfo.FullName}'"));
-                        }
-                    }
                 }
 
                 return _packageReferenceGroup;
@@ -198,10 +190,15 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                 if (targetFrameworkElements.Count() > 0)
                 {
                     // If property is specified more than once, MSBuild will resolve it by overwriting it with the last value.
-                    var targetFramework = targetFrameworkElements.Last().Value.Trim().ToLowerInvariant();
+                    var targetFramework = targetFrameworkElements.Last().Value.Trim();
                     if (!string.IsNullOrWhiteSpace(targetFramework))
                     {
-                        if(TargetFrameworkHelper.IsSupportedFramework(targetFramework, out FrameworkInfo fxInfo))
+                        if (targetFramework.ToString().StartsWith("$"))
+                        {
+                            targetFramework = GetValueFromDirBuildProps(targetFramework, msbuildProj.DirectoryPath);
+                        }
+
+                        if (TargetFrameworkHelper.IsSupportedFramework(targetFramework, out FrameworkInfo fxInfo))
                         {
                             msbuildProj._targetFrameworks.Add(targetFramework);
                         }
@@ -217,7 +214,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                         var targetFrameworks = targetFrameworksElements.Last().Value;
                         foreach (var targetFx in targetFrameworks.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()))
                         {
-                            if (!string.IsNullOrWhiteSpace(targetFx))
+                            if (!string.IsNullOrEmpty(targetFx) && !targetFx.ToString().StartsWith("$"))
                             {
                                 msbuildProj._targetFrameworks.Add(targetFx);
                             }
@@ -236,9 +233,9 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                     }
                     else
                     {
-                        msbuildProj._targetFramework = string.Concat("net", TargetFrameworkHelper.NetCoreVersionReferenceTable.LastOrDefault().Key.ToString());
+                        msbuildProj._targetFramework = string.Concat("net", TargetFrameworkHelper.s_currentSupportedVersions.First());
                     }
-                    
+
                     msbuildProj._targetFrameworks.Add(msbuildProj._targetFramework);
                 }
 
@@ -363,7 +360,13 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
                 var sdkVersion = await ProjectPropertyResolver.GetSdkVersionAsync(msbuildProj.DirectoryPath, logger, cancellationToken).ConfigureAwait(false);
                 msbuildProj.SdkVersion = sdkVersion ?? string.Empty;
-
+                foreach (var tfx in msbuildProj._targetFrameworks)
+                {
+                    if(TargetFrameworkHelper.IsEndofLifeFramework(tfx))
+                    {
+                        msbuildProj._endOfLifeTargetFrameworks.Add(tfx);
+                    }
+                }
                 return msbuildProj;
             }
         }
@@ -413,6 +416,27 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
             project._isSaved = true;
 
             return project;
+        }
+
+        private static string GetValueFromDirBuildProps(string elementStr, string dirPath)
+        {
+            try
+            {
+                //elementStr format: $(ElementName)
+                elementStr = elementStr.Substring(2).TrimEnd(')');
+                string filePath = Path.Combine(dirPath, DirBuildProps);
+                XDocument doc = XDocument.Load(filePath);
+                var ele = doc.Root?.Descendants(elementStr).FirstOrDefault();
+                if (ele != null)
+                {
+                    return ele.Value;
+                }
+            }
+            catch
+            {
+            }
+
+            return "";
         }
 
         private static IEnumerable<XElement> GetGroupValues(XElement projectElement, string group, bool createOnMissing = false)
@@ -514,21 +538,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                         this.ProjectReferceGroup.Add(new XElement("ProjectReference", new XAttribute("Include", dependency.FullPath)));
                         break;
                     case ProjectDependencyType.Binary:
-                        FrameworkInfo netfxInfo = null;
-                        FrameworkInfo dnxInfo = null;
-                        string dnxStr = this.TargetFrameworks.FirstOrDefault(t => TargetFrameworkHelper.IsSupportedFramework(t, out dnxInfo) && dnxInfo.IsDnx);
-                        if (this.TargetFrameworks.Count() > 1 && dependency.Name.Equals(TargetFrameworkHelper.FullFrameworkReferences.FirstOrDefault().Name)
-                            && !string.IsNullOrWhiteSpace(dnxStr) && dnxInfo.Version.Major >= 6)
-                        {
-                            if (this.TargetFrameworks.Any(t => TargetFrameworkHelper.IsSupportedFramework(t, out netfxInfo) && !netfxInfo.IsDnx))
-                            {
-                                this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Condition", $"'$(TargetFramework)' == '{netfxInfo.FullName}'"), new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
-                            }
-                        }
-                        else
-                        {
-                            this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
-                        }
+                        this.ReferenceGroup.Add(new XElement("Reference", new XAttribute("Include", dependency.AssemblyName), new XElement("HintPath", dependency.FullPath)));
                         break;
                     case ProjectDependencyType.Package:
                         this.PacakgeReferenceGroup.Add(new XElement("PackageReference", new XAttribute("Include", dependency.Name), new XAttribute("Version", dependency.Version)));
@@ -540,14 +550,29 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
                 if(copyInternalAssets && dependency.AssemblyName == "dotnet-svcutil-lib")
                 {
-                    switch(dependency.DependencyType)
+                    string basePath;
+                    string[] frameworks = { "net6.0", "net8.0", "net462" };
+                    switch (dependency.DependencyType)
                     {
                         case ProjectDependencyType.Binary:
-                            this.ReferenceGroup.Add(new XElement("Content", new XAttribute("CopyToOutputDirectory", "always"), new XAttribute("Include", Path.Combine(dependency.FullPath.Substring(0, dependency.FullPath.LastIndexOf(Path.DirectorySeparatorChar)), "internalAssets\\**")), new XAttribute("Link", "internalAssets/%(RecursiveDir)%(Filename)%(Extension)")));
+                            basePath = dependency.FullPath.Substring(0, dependency.FullPath.LastIndexOf(Path.DirectorySeparatorChar));
+                            foreach (var framework in frameworks)
+                            {
+                                this.ReferenceGroup.Add(new XElement("Content",
+                                    new XAttribute("CopyToOutputDirectory", "always"),
+                                    new XAttribute("Include", Path.Combine(basePath, $"{framework}\\**")),
+                                    new XAttribute("Link", $"{framework}/%(RecursiveDir)%(Filename)%(Extension)")));
+                            }
                             break;
                         case ProjectDependencyType.Package:
-                            string path = $"$(NuGetPackageRoot){dependency.Name}\\{dependency.Version}\\content\\internalAssets\\**";
-                            this.PacakgeReferenceGroup.Add(new XElement("Content", new XAttribute("CopyToOutputDirectory", "always"), new XAttribute("Include", path), new XAttribute("Link", "internalAssets/%(RecursiveDir)%(Filename)%(Extension)")));
+                            basePath = $"$(NuGetPackageRoot){dependency.Name}\\{dependency.Version}";
+                            foreach (var framework in frameworks)
+                            {
+                                this.PacakgeReferenceGroup.Add(new XElement("Content",
+                                    new XAttribute("CopyToOutputDirectory", "always"),
+                                    new XAttribute("Include", $"{basePath}\\{framework}\\**"),
+                                    new XAttribute("Link", $"{framework}/%(RecursiveDir)%(Filename)%(Extension)")));
+                            }
                             break;
                     }
                 }
@@ -557,6 +582,14 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
             }
 
             return addDependency;
+        }
+
+        public void SetEnableMsixTooling()
+        {
+            // workaround for https://github.com/microsoft/WindowsAppSDK/issues/3548: dotnet build fails when WindowsAppSDK is referenced in console application.
+            // affects MAUI project targeting net7.0-windows10.0xxx, not reproduce in net8.0-window10.0xxx
+            // ref: https://github.com/dotnet/maui/issues/5886
+            SetPropertyValue("EnableMsixTooling", "true");
         }
 
         // Sets the property value in a PropertyGroup. Returns true if the value was changed, and false if it was already set to that value.
@@ -727,7 +760,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
             using (var safeLogger = await SafeLogger.WriteStartOperationAsync(logger, "Resolving project references ...").ConfigureAwait(false))
             {
-                if (_targetFrameworks.Count == 1 && TargetFrameworkHelper.IsSupportedFramework(this.TargetFramework, out var frameworkInfo) && frameworkInfo.IsDnx)
+                if (_targetFrameworks.Count >= 1 && TargetFrameworkHelper.IsSupportedFramework(this.TargetFramework, out var frameworkInfo) && frameworkInfo.IsDnx)
                 {
                     await this.RestoreAsync(logger, cancellationToken).ConfigureAwait(false);
 
@@ -762,15 +795,17 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                     try
                     {
                         var assetsFile = new FileInfo(Path.Combine(this.DirectoryPath, "obj", "project.assets.json")).FullName;
-                        if (File.Exists(assetsFile))
+                        if (File.Exists(assetsFile) && !(this.TargetFramework.Contains("-") && !this.TargetFramework.ToLower().Contains("windows")))
                         {
                             LockFile lockFile = LockFileUtilities.GetLockFile(assetsFile, logger as NuGet.Common.ILogger);
-
                             if (lockFile != null)
                             {
-                                if (lockFile.Targets.Count == 1)
+                                LockFileTarget target = lockFile.Targets.Count == 1 ? lockFile.Targets[0] : lockFile.Targets.FirstOrDefault(t =>
+                                t.Name.StartsWith(this.TargetFramework, StringComparison.InvariantCultureIgnoreCase) //this.TargetFramework:net7.0-windows, targets:net7.0-windows7.0
+                                || this.TargetFramework.StartsWith(t.Name, StringComparison.InvariantCultureIgnoreCase));//this.TargetFramework:net7.0-windows10.0.19041.0, targets:net7.0-windows10.0.19041
+                                if (target != null)
                                 {
-                                    foreach (var lib in lockFile.Targets[0].Libraries)
+                                    foreach (var lib in target.Libraries)
                                     {
                                         bool isPackage = StringComparer.OrdinalIgnoreCase.Compare(lib.Type, "package") == 0;
 
@@ -938,7 +973,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
                 if (propertyTable.Count() != propertyNames.Count())
                 {
-                    propertyTable = await _propertyResolver.EvaluateProjectPropertiesAsync(this.FullPath, this.TargetFrameworks.FirstOrDefault(), propertyNames, this.GlobalProperties, logger, cancellationToken).ConfigureAwait(false);
+                    propertyTable = await _propertyResolver.EvaluateProjectPropertiesAsync(this.FullPath, this.TargetFramework, propertyNames, this.GlobalProperties, logger, cancellationToken).ConfigureAwait(false);
 
                     foreach (var entry in propertyTable)
                     {
@@ -968,7 +1003,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
                 {
                     var depsFiles = Directory.GetFiles(binFolder, "*", SearchOption.AllDirectories)
                         .Where(d => Path.GetFileName(d).Equals(fileName, RuntimeEnvironmentHelper.FileStringComparison))
-                        .Where(f => PathHelper.GetFolderName(Path.GetDirectoryName(f)) == this.TargetFrameworks.FirstOrDefault())
+                        .Where(f => PathHelper.GetFolderName(Path.GetDirectoryName(f)) == this.TargetFramework || Directory.GetParent(Directory.GetParent(f).FullName).Name == this.TargetFramework)
                         .Select(f => new FileInfo(f))
                         .OrderByDescending(f => f.CreationTimeUtc);
 

@@ -55,21 +55,6 @@ namespace System.ServiceModel
             throw new PlatformNotSupportedException(SRP.ConfigurationFilesNotSupported);
         }
 
-        protected ClientBase(string endpointConfigurationName)
-        {
-            throw new PlatformNotSupportedException(SRP.ConfigurationFilesNotSupported);
-        }
-
-        protected ClientBase(string endpointConfigurationName, string remoteAddress)
-        {
-            throw new PlatformNotSupportedException(SRP.ConfigurationFilesNotSupported);
-        }
-
-        protected ClientBase(string endpointConfigurationName, EndpointAddress remoteAddress)
-        {
-            throw new PlatformNotSupportedException(SRP.ConfigurationFilesNotSupported);
-        }
-
         protected ClientBase(Binding binding, EndpointAddress remoteAddress)
         {
             if (binding == null)
@@ -116,6 +101,26 @@ namespace System.ServiceModel
                 _channelFactoryRef = new ChannelFactoryRef<TChannel>(new ChannelFactory<TChannel>(endpoint));
                 _channelFactoryRef.ChannelFactory.TraceOpenAndClose = false;
                 TryDisableSharing();
+            }
+        }
+
+        protected ClientBase(InstanceContext callbackInstance)
+        {
+            if (callbackInstance == null)
+                throw DiagnosticUtility.ExceptionUtility.ThrowHelperArgumentNull(nameof(callbackInstance));
+
+            MakeCacheSettingReadOnly();
+
+            if (s_cacheSetting == CacheSetting.AlwaysOff)
+            {
+                _channelFactoryRef = new ChannelFactoryRef<TChannel>(
+                    new DuplexChannelFactory<TChannel>(callbackInstance));
+                _channelFactoryRef.ChannelFactory.TraceOpenAndClose = false;
+                TryDisableSharing();
+            }
+            else
+            {
+                throw new PlatformNotSupportedException();
             }
         }
 
@@ -406,7 +411,7 @@ namespace System.ServiceModel
             }
         }
 
-        // This ensures that the cachesetting (on, off or default) cannot be modified by 
+        // This ensures that the cachesetting (on, off or default) cannot be modified by
         // another ClientBase instance of matching TChannel after the first instance is created.
         private void MakeCacheSettingReadOnly()
         {
@@ -686,7 +691,7 @@ namespace System.ServiceModel
         }
 
         // Once the channel is created, we can't disable caching.
-        // This method can be called safely multiple times.  
+        // This method can be called safely multiple times.
         // this.sharingFinalized is set the first time the method is called.
         // Subsequent calls are essentially no-ops.
         void TryDisableSharing()
@@ -728,7 +733,7 @@ namespace System.ServiceModel
             }
 
             // can be done outside the lock since the lines below do not access shared data.
-            // also the use of this.sharingFinalized in the lines above ensures that tracing 
+            // also the use of this.sharingFinalized in the lines above ensures that tracing
             // happens only once and only when needed.
             if (WcfEventSource.Instance.ClientBaseUsingLocalChannelFactoryIsEnabled())
             {
@@ -783,12 +788,12 @@ namespace System.ServiceModel
             }
         }
 
-        // WARNING: changes in the signature/name of the following delegates must be applied to the 
+        // WARNING: changes in the signature/name of the following delegates must be applied to the
         // ClientClassGenerator.cs as well, otherwise the ClientClassGenerator would generate wrong code.
         protected delegate IAsyncResult BeginOperationDelegate(object[] inValues, AsyncCallback asyncCallback, object state);
         protected delegate object[] EndOperationDelegate(IAsyncResult result);
 
-        // WARNING: Any changes in the signature/name of the following type and its ctor must be applied to the 
+        // WARNING: Any changes in the signature/name of the following type and its ctor must be applied to the
         // ClientClassGenerator.cs as well, otherwise the ClientClassGenerator would generate wrong code.
         protected class InvokeAsyncCompletedEventArgs : AsyncCompletedEventArgs
         {
@@ -801,7 +806,7 @@ namespace System.ServiceModel
             public object[] Results { get; }
         }
 
-        // WARNING: Any changes in the signature/name of the following method ctor must be applied to the 
+        // WARNING: Any changes in the signature/name of the following method ctor must be applied to the
         // ClientClassGenerator.cs as well, otherwise the ClientClassGenerator would generate wrong code.
         protected void InvokeAsync(BeginOperationDelegate beginOperationDelegate, object[] inValues,
             EndOperationDelegate endOperationDelegate, SendOrPostCallback operationCompletedCallback, object userState)

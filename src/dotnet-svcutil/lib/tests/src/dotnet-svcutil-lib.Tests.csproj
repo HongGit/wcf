@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk" DefaultTargets="Build">
+<Project Sdk="Microsoft.NET.Sdk" DefaultTargets="Build">
   <!-- $(RepositoryRoot)Directory.Build.props automatically imported by Microsoft.Common.props -->
   <PropertyGroup>
     <AssemblyVersionFile>$(IntermediateOutputPath)\$(TargetFramework)\$(MSBuildProjectName).$(TargetFramework).version.cs</AssemblyVersionFile>
@@ -10,6 +10,7 @@
     <IsTestProject>true</IsTestProject>
     <RootNamespace>Microsoft.Tools.ServiceModel.Svcutil</RootNamespace>
     <AssemblyName>$(MSBuildProjectName)</AssemblyName>
+    <NuGetAuditMode>direct</NuGetAuditMode>
   </PropertyGroup>
   <PropertyGroup>
     <!-- disable .net core assembly info generation as we have custom versioning. -->
@@ -23,7 +24,6 @@
   <PropertyGroup>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
     <DefineConstants>$(DefineConstants);NETCORE</DefineConstants>
-    <DefineConstants Condition="'$(TargetFramework)' == 'netcoreapp1.0'">$(DefineConstants);NETCORE10</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Label="FxCopAnalyzers">
     <NonShipping Label="Disable MicroBuild Compliance tasks">true</NonShipping>

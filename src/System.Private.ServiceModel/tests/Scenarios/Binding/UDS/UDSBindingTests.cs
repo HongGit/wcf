@@ -60,7 +60,7 @@ public partial class Binding_UDSBindingTests : ConditionalWcfTest
     [WcfFact]
     [OuterLoop]
     [Condition(nameof(Windows_Authentication_Available),
-              nameof(WindowsOrSelfHosted))]
+              nameof(Is_Windows))]
     public void WindowsAuth()
     {
         string testString = new string('a', 3000);
@@ -75,13 +75,9 @@ public partial class Binding_UDSBindingTests : ConditionalWcfTest
                 System.ServiceModel.UnixDomainSocketBinding binding = new UnixDomainSocketBinding(System.ServiceModel.UnixDomainSocketSecurityMode.Transport);
                 binding.Security.Transport.ClientCredentialType = System.ServiceModel.UnixDomainSocketClientCredentialType.Windows;
 
-                var uriBuilder = new UriBuilder()
-                {
-                    Scheme = "net.uds",
-                    Path = UDS.GetUDSFilePath()
-                };
+                var uri = new Uri("net.uds://" + UDS.GetUDSFilePath());
                 factory = new System.ServiceModel.ChannelFactory<IEchoService>(binding,
-                    new System.ServiceModel.EndpointAddress(uriBuilder.ToString()));
+                    new System.ServiceModel.EndpointAddress(uri));
                 channel = factory.CreateChannel();
                 ((IChannel)channel).Open();
                 string result = channel.Echo(testString);
@@ -176,11 +172,47 @@ public partial class Binding_UDSBindingTests : ConditionalWcfTest
         }
     }
 
+    [WcfFact]
+    [OuterLoop]
+    public void SocketExceptionHandlingTest()
+    {
+        string testString = new string('a', 3000);
+        IHost host = ServiceHelper.CreateWebHostBuilder<StartUpForUDS>(UDS.GetUDSFilePath());
+        using (host)
+        {
+            System.ServiceModel.ChannelFactory<IEchoService> factory = null;
+            IEchoService serviceProxy = null;
+            host.Start();
+            try
+            {
+                System.ServiceModel.UnixDomainSocketBinding binding = new UnixDomainSocketBinding(UnixDomainSocketSecurityMode.None);
+                var uriBuilder = new UriBuilder()
+                {
+                    Scheme = "net.uds",
+                    Path = UDS.GetInvalidUDSFilePath()
+                };
+                factory = new System.ServiceModel.ChannelFactory<IEchoService>(binding,
+                    new System.ServiceModel.EndpointAddress(uriBuilder.ToString()));
+                serviceProxy = factory.CreateChannel();
+                Assert.Throws<EndpointNotFoundException>(() => ((IChannel)serviceProxy).Open());
+            }
+            finally
+            {
+                ServiceHelper.CloseServiceModelObjects((IChannel)serviceProxy, factory);
+            }
+        }
+    }
+
     public class UDS
     {
         public static string GetUDSFilePath()
         {
             return Path.Combine(Path.GetTempPath(), "unix1.txt");
+        }
+
+        public static string GetInvalidUDSFilePath()
+        {
+            return Path.Combine(Path.GetTempPath(), "invalid.txt");
         }
     }
 

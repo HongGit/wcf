@@ -7,6 +7,7 @@ using System.IO;
 using Microsoft.Tools.ServiceModel.Svcutil;
 using System.Threading;
 using Xunit;
+using System.Threading.Tasks;
 
 namespace SvcutilTest
 {
@@ -107,11 +108,11 @@ namespace SvcutilTest
 
         [Trait("Category", "BVT")]
         [Theory]
-        [InlineData("net48")] //System.ServiceModel get referened and CloseAsync() is generated
-        [InlineData("netstd20")] //WCF package older than V4.10 get referened and CloseAsync() is generated
-        [InlineData("net60")] //WCF package newer than V4.10 get referened and CloseAsync() is not generated
-        [InlineData("net60net48")] //WCF package newer than V4.10 and System.ServiceModel.dll are referenced conditionally by target and CloseAsync() be generarted with conditional compilation mark
-        public void MultiTargetCloseAsyncGeneration(string testCaseName)
+        [InlineData("net48")] //System.ServiceModel get referened and CloseAsync() is generated with Target Framework Preprocessor Directive 
+        [InlineData("netstd20")] //WCF package V4.10 get referened and CloseAsync() is generated with TFPD
+        [InlineData("net60")] //WCF package V6.2 get referened and CloseAsync() is generated with TFPD
+        [InlineData("net60net48")] //WCF package V6.2 and System.ServiceModel.dll are referenced conditionally by target and CloseAsync() is generated with TFPD
+        public async Task MultiTargetCloseAsyncGeneration(string testCaseName)
         {
             this_TestCaseName = "MultiTargetCloseAsyncGeneration";
             TestFixture();
@@ -125,7 +126,7 @@ namespace SvcutilTest
             Directory.CreateDirectory(this_TestCaseOutputDir);
             File.Copy(Path.Combine(g_TestCasesDir, this_TestCaseName, testCaseName, "Program.cs"), Path.Combine(this_TestCaseOutputDir, "Program.cs"), true);
             File.Copy(Path.Combine(g_TestCasesDir, this_TestCaseName, testCaseName, $"{testCaseName}.csproj"), Path.Combine(this_TestCaseOutputDir, $"{testCaseName}.csproj"), true);
-            this_TestCaseProject = MSBuildProj.FromPathAsync(Path.Combine(this_TestCaseOutputDir, $"{testCaseName}.csproj"), null, CancellationToken.None).Result;
+            this_TestCaseProject = await MSBuildProj.FromPathAsync(Path.Combine(this_TestCaseOutputDir, $"{testCaseName}.csproj"), null, CancellationToken.None);
             
             this_FixupUtil = new FixupUtil();
             this_FixupUtil.Init(g_TestResultsDir, g_TestCasesDir, this_TestCaseOutputDir, g_ServiceUrl, g_ServiceId, g_RepositoryRoot);
@@ -138,16 +139,46 @@ namespace SvcutilTest
         }
 
         [Trait("Category", "BVT")]
+        [Fact]
+        public async Task MultiTargetTypeReuse()
+        {
+            this_TestCaseName = "MultiTargetTypeReuse";
+            TestFixture();
+            string testClientFolder = "TypeReuseClient";
+            this_TestCaseBaselinesDir = Path.Combine(this_TestGroupBaselinesDir, testClientFolder);
+            Directory.CreateDirectory(this_TestCaseBaselinesDir);
+
+            this_TestGroupOutputDir = Path.Combine(Path.GetTempPath(), this_TestCaseName);
+            this_TestCaseLogFile = Path.Combine(this_TestGroupOutputDir, $"{this_TestCaseName}.log");
+            this_TestCaseOutputDir = Path.Combine(this_TestGroupOutputDir, testClientFolder);
+            FileUtil.TryDeleteDirectory(this_TestCaseOutputDir);
+            Directory.CreateDirectory(this_TestCaseOutputDir);
+            FileUtil.CopyDirectory(Path.Combine(g_TestCasesDir, this_TestCaseName), this_TestGroupOutputDir, true);
+            this_TestCaseProject = await MSBuildProj.FromPathAsync(Path.Combine(this_TestCaseOutputDir, $"{testClientFolder}.csproj"), null, CancellationToken.None);
+            ProcessRunner.ProcessResult ret = await this_TestCaseProject.BuildAsync(true, this_TestCaseLogger, CancellationToken.None);
+            Assert.True(ret.ExitCode == 0, ret.OutputText);
+
+            this_FixupUtil = new FixupUtil();
+            this_FixupUtil.Init(g_TestResultsDir, g_TestCasesDir, this_TestCaseOutputDir, g_ServiceUrl, g_ServiceId, g_RepositoryRoot);
+
+            var uri = Path.Combine(g_TestCasesDir, "wsdl", "TypeReuseSvc.wsdl");
+            var outDir = Path.Combine(this_TestCaseOutputDir, "ServiceReference");
+            var options = $"{uri} -nl --outputDir {outDir}";
+
+            TestGlobalSvcutil(options, expectSuccess: true);
+        }
+
+        [Trait("Category", "BVT")]
         [Theory]
         [InlineData("net6.0", "-elm")]
-        public void ParamsFiles_SDK_TFM(string targetFramework, string extraOptions)
+        public async Task ParamsFiles_SDK_TFM(string targetFramework, string extraOptions)
         {
             this_TestCaseName = "ParamsFiles_SDK_TFM";
             TestFixture();
             var testCaseName = $"TF{targetFramework}".Replace(".", "_");
             InitializeGlobal(testCaseName, targetFramework: "net6.0", g_SdkVersion);
             this_TestCaseProject.TargetFramework = targetFramework;
-            this_TestCaseProject.SaveAsync(this_TestCaseLogger, System.Threading.CancellationToken.None).Wait();
+            await this_TestCaseProject.SaveAsync(this_TestCaseLogger, System.Threading.CancellationToken.None);
 
             var url = $"{Path.Combine(g_TestCasesDir, "wsdl", "Simple.wsdl")}";
             var ns = testCaseName.Replace(".", "_") + "_NS";

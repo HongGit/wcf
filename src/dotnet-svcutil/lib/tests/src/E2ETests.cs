@@ -120,7 +120,7 @@ namespace SvcutilTest
             InitializeE2E(testCaseName);
 
             var uri = Path.Combine(g_TestCasesDir, "wsdl", "WcfProjectNService", "tempuri.org.wsdl");
-            var options = $"{uri} {optionModifier} -nl -tf netcoreapp1.0";
+            var options = $"{uri} {optionModifier} -nl -tf net8.0";
             this_TestCaseName = testCaseName;
             TestSvcutil(AppendCommonOptions(options));
         }
@@ -488,6 +488,28 @@ namespace SvcutilTest
             TestFixture();
 
             WcfRuntimeSvcs(serviceName, expectSuccess);
+        }
+
+        [Trait("Category", "Test")]
+        [Fact]
+        public void ContractMemberNamedSystem()
+        {
+            this_TestCaseName = "ContractMemberNamedSystem";
+            TestFixture();
+            InitializeE2E(this_TestCaseName);
+            string wsdlFile = Path.Combine(g_TestCasesDir, "wsdl", "memberNamedSystem.wsdl");
+            TestSvcutil(AppendCommonOptions(wsdlFile));
+        }
+
+        [Trait("Category", "Test")]
+        [Fact]
+        public void ContractTypeNamedReservedKeyword()
+        {
+            this_TestCaseName = "ContractTypeNamedReservedKeyword";
+            TestFixture();
+            InitializeE2E(this_TestCaseName);
+            string wsdlFile = Path.Combine(g_TestCasesDir, "wsdl", "TypeNameUseReservedKeyword.wsdl");
+            TestSvcutil(AppendCommonOptions(wsdlFile));
         }
 
         private void WcfRuntimeSvcs(string serviceName, bool expectSuccess)

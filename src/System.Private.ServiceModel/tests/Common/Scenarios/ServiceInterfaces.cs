@@ -89,6 +89,9 @@ public interface IWcfService
 
     [OperationContract]
     Dictionary<string, string> GetRequestHttpHeaders();
+
+    [OperationContract]
+    Task EchoReturnTaskAsync();
 }
 
 [ServiceContract]
@@ -344,6 +347,19 @@ public interface IWcfDuplexService_CallbackDebugBehavior
 }
 
 public interface IWcfDuplexService_CallbackDebugBehavior_Callback
+{
+    [OperationContract]
+    void ReplyThrow(string input);
+}
+
+[ServiceContract(CallbackContract = typeof(IWcfDuplexService_CallbackErrorHandler_Callback))]
+public interface IWcfDuplexService_CallbackErrorHandler
+{
+    [OperationContract]
+    bool Hello(string greeting);
+}
+
+public interface IWcfDuplexService_CallbackErrorHandler_Callback
 {
     [OperationContract]
     void ReplyThrow(string input);

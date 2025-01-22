@@ -14,6 +14,7 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         public const string Netstandard = "netstandard";
         public const string Netcoreapp = "netcoreapp";
         public const string Netfx = "net";
+        public const string Netframework = "netframework";
         public const string Netversion = "version";
 
         private FrameworkInfo()
@@ -24,7 +25,6 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
         public string Name { get; private set; }
         public Version Version { get; private set; }
         public bool IsDnx { get; private set; }
-        public bool IsKnownDnx { get; private set; }
 
         public static FrameworkInfo Parse(string fullFrameworkName)
         {
@@ -39,6 +39,9 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
             // framework spec form: 'netcore1.5' or 'net452'
             // framework spec form: 'net5.0'
             // framework spec form: '.NETCoreApp,Version=v6.0'
+            // framework spec form: '.NETFramework,Version=v4.8'
+            // framework spec form: '.NETStandard,Version=v2.0'
+            // framework spec form: 'net7.0-windows10.0.19041.0', 'net7.0-windows'
             for (int i = 0; i < fullFrameworkName.Length; i++)
             {
                 char c = fullFrameworkName[i];
@@ -48,17 +51,25 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
                     // Version ctr requires at least Major and Minor parts
                     string versionString = fullFrameworkName.Substring(i);
-                    if ((name == Netfx) && !versionString.Contains("."))
+                    if ((name == Netfx))
                     {
                         // net452
-                        StringBuilder sb = new StringBuilder(versionString);
-                        for (int j = 1; j < sb.Length; j += 2)
+                        if(!versionString.Contains("."))
                         {
-                            sb.Insert(j, '.');
+                            StringBuilder sb = new StringBuilder(versionString);
+                            for (int j = 1; j < sb.Length; j += 2)
+                            {
+                                sb.Insert(j, '.');
+                            }
+                            versionString = sb.ToString();
                         }
-                        versionString = sb.ToString();
+                        // net7.0-windows10.0.19041.0
+                        if (versionString.Contains("-"))
+                        {
+                            versionString = versionString.Substring(0, versionString.IndexOf("-"));
+                        }                        
                     }
-
+                    
                     version = new Version(versionString);
                     break;
                 }
@@ -66,10 +77,19 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
 
             if (name.ToLower().Contains(Netversion))
             {
-                if (version.Major >= 5)
+                //TFMoniker form ".NETStandard,Version=v2.0" resolves to framework name "netstandard."
+                if (name.ToLower().Contains(Netstandard))
+                {
+                    name = Netstandard;
+                }
+                //TFMoniker form ".NETFramework,Version=v4.8" resolves to framework name "net"
+                //TFMoniker form ".NETCoreApp,Version=v6.0" resolves to framework name "net"
+                else if (name.ToLower().Contains(Netframework) || version.Major >= 5)
                 {
                     name = Netfx;
                 }
+
+                //TFMoniker form ".NETCoreApp,Version=v3.1" resolves to framework name "netcoreapp"
                 else
                 {
                     name = Netcoreapp;
@@ -89,9 +109,6 @@ namespace Microsoft.Tools.ServiceModel.Svcutil
             fxInfo.Name = name;
             fxInfo.Version = version;
             fxInfo.IsDnx = name == Netstandard || name == Netcoreapp || version.Major >= 5;
-            fxInfo.IsKnownDnx = fxInfo.IsDnx &&
-                        (TargetFrameworkHelper.NetStandardToNetCoreVersionMap.Keys.Any((netstdVersion) => netstdVersion == version) ||
-                         TargetFrameworkHelper.NetStandardToNetCoreVersionMap.Values.Any((netcoreVersion) => netcoreVersion == version));
 
             return fxInfo;
         }
